@@ -69,7 +69,7 @@ Access:
 
 ### 🤔 Why Docker?
 
-The main purpose of using **Docker** in this project is to enable **direct integration with Obsidian** through the **Web Browser Viewer** plugin (and also **[Custom Frames](https://obsidian.md/plugins?id=obsidian-custom-frames)**).
+The main purpose of using **Docker** in this project is to enable **direct integration with Obsidian** through the **Web Browser Viewer** (and also **[Custom Frames](https://obsidian.md/plugins?id=obsidian-custom-frames)** plugin).
 
 With Docker, the app runs as a local web service, which allows:
 
@@ -100,6 +100,15 @@ ports:
 ports:
   - "192.168.1.100:5173:5173"  # Only accessible from specific IP
 ```
+
+## 🏗️ Architecture
+
+The application follows a modern three-tier architecture:
+
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ React Frontend │ │ Express Backend│ │ PostgreSQL DB │
+│ (Port 5173) │◄──►│ (Port 4000) │◄──►│ (Port 5432) │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
 
 ### Frontend (React + Vite)
 - Modern React 19 with hooks
