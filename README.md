@@ -37,31 +37,47 @@ A modern and elegant web application to track your daily water intake with real-
 - **📱 Multi-Device**: Access from PC, mobile, tablet - all synced via local database
 - **⚡ Always Available**: Docker ensures the app is always running and accessible
 
-## �🚀 Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
-- Docker and Docker Compose installed on your system
+- **For Local Development**: Node.js 18+ and npm
+- **For Obsidian Integration**: Docker and Docker Compose
 
 ### Running the Application
 
-1. Clone this repository:
+#### Option 1: Local Development (npm)
 ```bash
-git clone <repository-url>
-cd WaterIntakeTracking
+# Clone this repository
+git clone https://github.com/abner-dos-reis/water-intake-tracker.git
+cd water-intake-tracker
+
+# Install dependencies
+npm install
+cd backend && npm install && cd ..
+
+# Start the application
+npm run dev
 ```
 
-2. Start the application:
+Access: http://localhost:5173
+
+#### Option 2: Docker (For Obsidian Integration)
 ```bash
+# Clone this repository
+git clone https://github.com/abner-dos-reis/water-intake-tracker.git
+cd water-intake-tracker
+
+# Start with Docker
 docker compose up --build
 ```
 
-3. Access the application:
-   - **Web App**: http://localhost:5173
-   - **API**: http://localhost:4000
+Access: 
+- **Web App**: http://localhost:5173
+- **API**: http://localhost:4000
 
 ### 🔗 Obsidian Integration
 
-To use this app inside **Obsidian**:
+To use this app inside **Obsidian** (requires Docker setup above):
 
 1. **Install Required Plugins**:
    - [Web Browser Viewer](https://obsidian.md/plugins?id=web-browser)
@@ -102,11 +118,9 @@ ports:
 
 ## 🏗️ Architecture
 
-### Why Docker?
+### Why Docker for Obsidian Integration?
 
-This application was designed with **Docker containerization** for maximum flexibility and integration possibilities:
-
-**🔗 Obsidian Integration**: The primary use case is running this app inside **Obsidian** using the **Web Browser Viewer** and **Custom Frames** plugins. Docker allows the app to run as a local web service that can be embedded directly into Obsidian notes, creating a seamless note-taking and health tracking workflow.
+**🔗 Primary Use Case**: This application was specifically designed to run inside **Obsidian** using the **Web Browser Viewer** and **Custom Frames** plugins. Docker provides the perfect solution for this integration:
 
 **🌐 Network Flexibility**: Docker configuration allows you to:
 - Keep it **localhost-only** (default: `127.0.0.1`) for privacy
@@ -115,6 +129,8 @@ This application was designed with **Docker containerization** for maximum flexi
 - Use the app **anywhere**: in Obsidian on PC, mobile, or any device on your network
 
 **📱 Cross-Platform Access**: Whether you're taking notes in Obsidian on your computer or accessing from your phone, the containerized app provides consistent access to your water tracking data.
+
+**💡 Note**: For regular development work, use `npm run dev`. Docker is primarily for Obsidian integration and production deployments.
 
 The application follows a modern three-tier architecture:
 
