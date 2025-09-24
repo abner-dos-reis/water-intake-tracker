@@ -1,0 +1,92 @@
+/* ...existing code... */
+.history-bg {
+  min-height: 100vh;
+  background: #181f2a;
+  color: #fff;
+  font-family: 'Inter', Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+}
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding: 0 1rem;
+  box-sizing: border-box;
+}
+.calendar {
+  background: #232b3a;
+  border-radius: 1.2rem;
+  padding: 1rem;
+  margin: 1.5rem 0 1rem 0;
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+}
+.calendar-header {
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #4faaff;
+  margin-bottom: 0.7rem;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.3rem;
+}
+.calendar-cell {
+  background: #181f2a;
+  color: #fff;
+  border-radius: 50%;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background 0.2s, color 0.2s, border 0.2s;
+}
+.calendar-cell.reached {
+  background: #2196f3;
+  color: #fff;
+}
+.calendar-cell.selected {
+  border: 2px solid #ffd54f;
+}
+.calendar-cell.empty {
+  background: none;
+  cursor: default;
+}
+.history-graph {
+  width: 100%;
+  max-width: 420px;
+  margin: 1.5rem 0 0 0;
+  background: #232b3a;
+  border-radius: 1.2rem;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+.graph-label {
+  color: #4faaff;
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+@media (max-width: 600px) {
+  .calendar, .history-graph {
+    max-width: 100vw;
+    padding: 0.5rem;
+  }
+  .calendar-cell {
+    width: 1.7rem;
+    height: 1.7rem;
+    font-size: 0.95rem;
+  }
+}
+/* ...existing code... */
