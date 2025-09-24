@@ -2,7 +2,9 @@
 
 A modern and elegant web application to track your daily water intake with real-time progress visualization and persistent data storage.
 
-![Water Intake Tracker](./water.png)
+<p align="center">
+  <img src="./water.png" alt="Water Intake Tracker" />
+</p>
 
 ## 📸 Screenshots
 
@@ -27,15 +29,6 @@ A modern and elegant web application to track your daily water intake with real-
 - **⏰ Automatic Reset**: Daily progress resets automatically at midnight
 - **💾 Persistent Storage**: All data is saved to PostgreSQL database with localStorage fallback
 - **📱 Responsive Design**: Modern dark theme interface that works on all devices
-- **📅 History Tracking**: View your water intake history with calendar visualization
-
-## � Use Cases
-
-- **📝 Obsidian Integration**: Perfect companion for health and wellness notes in Obsidian
-- **🏠 Home Network Access**: Track water intake from any device in your home
-- **🔒 Privacy-First**: Data stays on your local network, no cloud dependency
-- **📱 Multi-Device**: Access from PC, mobile, tablet - all synced via local database
-- **⚡ Always Available**: Docker ensures the app is always running and accessible
 
 ## 🚀 Quick Start
 
@@ -53,7 +46,6 @@ cd water-intake-tracker
 
 # Install dependencies
 npm install
-cd backend && npm install && cd ..
 
 # Start the application
 npm run dev
@@ -68,33 +60,26 @@ git clone https://github.com/abner-dos-reis/water-intake-tracker.git
 cd water-intake-tracker
 
 # Start with Docker
-docker compose up --build
+docker compose up --build -d
 ```
 
 Access: 
 - **Web App**: http://localhost:5173
 - **API**: http://localhost:4000
 
-### 🔗 Obsidian Integration
+### 🤔 Why Docker?
 
-To use this app inside **Obsidian** (requires Docker setup above):
+The main purpose of using **Docker** in this project is to enable **direct integration with Obsidian** through the **Web Browser Viewer** plugin (and also **[Custom Frames](https://obsidian.md/plugins?id=obsidian-custom-frames)**).
 
-1. **Install Required Plugins**:
-   - [Web Browser Viewer](https://obsidian.md/plugins?id=web-browser)
-   - [Custom Frames](https://obsidian.md/plugins?id=obsidian-custom-frames)
+With Docker, the app runs as a local web service, which allows:
 
-2. **Add Custom Frame**:
-   ```
-   Frame Name: Water Tracker
-   URL: http://localhost:5173
-   ```
+- **Seamless Obsidian integration**: The tracker opens inside Obsidian as if it were part of the note, without relying on external services.  
+- **Isolated and standardized environment**: Prevents dependency conflicts on your system.  
+- **Easy access**: Runs on **localhost** by default, but can also be opened on your home network or restricted to specific IPs.  
+- **Always available**: The container ensures the app runs continuously without manual startup each time.  
 
-3. **Embed in Notes**:
-   ```markdown
-   ```custom-frames
-   frame: Water Tracker
-   ```
-   ```
+👉 In short: **Docker makes it possible to use this app as a water intake tracker fully integrated with Obsidian**, accessible via the **Web Browser Viewer** + **Custom Frames** plugin and ready to use across multiple devices.
+
 
 ### 🌐 Network Configuration
 
@@ -116,37 +101,6 @@ ports:
   - "192.168.1.100:5173:5173"  # Only accessible from specific IP
 ```
 
-## 🏗️ Architecture
-
-### Why Docker for Obsidian Integration?
-
-**🔗 Primary Use Case**: This application was specifically designed to run inside **Obsidian** using the **Web Browser Viewer** and **Custom Frames** plugins. Docker provides the perfect solution for this integration:
-
-**🌐 Network Flexibility**: Docker configuration allows you to:
-- Keep it **localhost-only** (default: `127.0.0.1`) for privacy
-- **Open to network** by changing bind addresses to `0.0.0.0`
-- **Restrict access** to specific IPs using Docker networking rules
-- Use the app **anywhere**: in Obsidian on PC, mobile, or any device on your network
-
-**📱 Cross-Platform Access**: Whether you're taking notes in Obsidian on your computer or accessing from your phone, the containerized app provides consistent access to your water tracking data.
-
-**💡 Note**: For regular development work, use `npm run dev`. Docker is primarily for Obsidian integration and production deployments.
-
-The application follows a modern three-tier architecture:
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React Frontend│    │  Express Backend│    │  PostgreSQL DB  │
-│   (Port 5173)   │◄──►│   (Port 4000)   │◄──►│   (Port 5432)   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-            ↕
-    ┌─────────────────┐
-    │    Obsidian     │
-    │  Web Viewer +   │
-    │ Custom Frames   │
-    └─────────────────┘
-```
-
 ### Frontend (React + Vite)
 - Modern React 19 with hooks
 - Vite for fast development and building
@@ -164,19 +118,6 @@ The application follows a modern three-tier architecture:
 - Tables: `water_intake`, `user_settings`, `daily_celebrations`
 - ACID compliance for data integrity
 
-## 📋 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/intake` | Register water intake |
-| `GET` | `/api/intake` | Get daily total intake |
-| `GET` | `/api/history` | Get intake history |
-| `POST` | `/api/settings/target` | Set water target |
-| `GET` | `/api/settings/target` | Get water target |
-| `DELETE` | `/api/intake/reset` | Reset daily intake |
-| `POST` | `/api/celebration/mark` | Mark celebration as seen |
-| `GET` | `/api/celebration/check` | Check celebration status |
-
 ## 🛠️ Technology Stack
 
 - **Frontend**: React 19, Vite, CSS3
@@ -184,58 +125,6 @@ The application follows a modern three-tier architecture:
 - **Database**: PostgreSQL 15
 - **DevOps**: Docker, Docker Compose
 - **UI/UX**: Custom CSS with animations, responsive design
-
-## 📁 Project Structure
-
-```
-WaterIntakeTracking/
-├── src/                    # React frontend source
-│   ├── App.jsx            # Main application component
-│   ├── History.jsx        # History/calendar component
-│   ├── App.css            # Main styles
-│   └── History.css        # History styles
-├── backend/               # Node.js backend
-│   ├── index.js           # Express server
-│   └── package.json       # Backend dependencies
-├── public/                # Static assets
-├── docker-compose.yml     # Container orchestration
-├── Dockerfile            # Frontend container
-└── README.md             # This file
-```
-
-## 🔧 Development
-
-### Local Development
-```bash
-# Frontend development
-npm run dev
-
-# Backend development  
-cd backend && npm run dev
-```
-
-### Building for Production
-```bash
-# Build frontend
-npm run build
-
-# Preview production build
-npm run preview
-```
-
-## � Security Features
-
-- **Network Isolation**: All services bind to localhost (127.0.0.1) only
-- **Input Validation**: Server-side validation for all API endpoints
-- **SQL Injection Prevention**: Parameterized queries with pg library
-- **CORS Configuration**: Controlled cross-origin access
-
-## 🌐 Browser Support
-
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
 
 ## 🤝 Contributing
 
@@ -248,15 +137,6 @@ npm run preview
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🎯 Future Enhancements
-
-- [ ] User authentication and profiles
-- [ ] Mobile app versions
-- [ ] Export data functionality
-- [ ] Reminder notifications
-- [ ] Weekly/monthly statistics
-- [ ] Integration with fitness trackers
 
 ---
 
