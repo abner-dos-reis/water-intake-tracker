@@ -105,10 +105,12 @@ ports:
 
 The application follows a modern three-tier architecture:
 
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ React Frontend │ │ Express Backend│ │ PostgreSQL DB │
-│ (Port 5173) │◄──►│ (Port 4000) │◄──►│ (Port 5432) │
-└─────────────────┘ └─────────────────┘ └─────────────────┘
+```text
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ React Frontend  │    │ Express Backend │    │  PostgreSQL DB  │
+│   (Port 5173)   │◄──►│   (Port 4000)   │◄──►│   (Port 5432)   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
 
 ### Frontend (React + Vite)
 - Modern React 19 with hooks
