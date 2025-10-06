@@ -134,6 +134,44 @@ Key endpoints
 - `POST /api/notifications/ack` — host-notifier posts here after playing sound (used by frontend to avoid fallback playback).
 - `GET /api/notifications/last-ack` — frontend polls this to check if host played the notification.
 
+Server-side scheduling (new)
+
+To make scheduling consistent whether the app is open or closed, the backend now centralizes the next-notify logic. Important notes:
+
+- `POST /api/intake` records water intake and also records a `last_drink` timestamp on the backend. This endpoint will emit a NOTIFY so host-notifier can reschedule immediately.
+- `GET /api/last-drink?user_id=...` returns the timestamp of the most recent drink.
+- `GET /api/next-notify?user_id=...` computes the next notification timestamp according to the following rules:
+  - If the user already reached their daily target, `next` is null (no more notifications).
+  - If the user drank after the last notification ack, the next notify is exactly 60 minutes after that drink.
+  - Otherwise, the next notify is 60 minutes after the last ack (or 60 minutes from now if none exists).
+  - If the computed next time falls between 00:00 and 00:59, it is moved to 01:00 (no notifications between midnight and 01:00).
+
+Host-notifier behavior
+
+- On startup and whenever it receives a `last_drink` NOTIFY, the host-notifier now calls `GET /api/next-notify` and schedules the next system notification exactly at that timestamp. This guarantees that, even if the browser is closed, the next reminder will fire 60 minutes after the user's last drink (unless the target is already reached).
+- The host-notifier still performs periodic polling (`POLL_MINUTES`) as a backup, and includes dedupe protections to avoid repeated plays.
+
+Quick test commands
+
+- Register a drink (simulate user drinking):
+
+```sh
+curl -s -X POST http://localhost:4000/api/intake \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"default","date":"'$(date +%F)'","amount":300}'
+```
+
+- Ask backend when the next notification should be:
+
+```sh
+curl -s http://localhost:4000/api/next-notify?user_id=default | jq .
+```
+
+Notes
+
+- This approach centralizes timing rules in the backend so both frontend and host-notifier behave the same way.
+- If you prefer a different policy (for example, allow notifications during 00:00-01:00 or use a different interval), these rules are implemented in `backend/index.js` and can be adjusted there.
+
 Host notifier (systemd user service)
 1. Install `mpg123` on your host (used to play audio):
 

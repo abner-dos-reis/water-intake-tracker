@@ -146,6 +146,34 @@ async function start() {
   await checkAndNotify();
   setInterval(checkAndNotify, POLL_MINUTES * 60 * 1000);
 
+  // internal scheduled timeout for precise next-notify after a drink
+  let scheduledTimeout = null;
+  const scheduleForDrankAt = (drankAtIso) => {
+    try {
+      if (scheduledTimeout) {
+        clearTimeout(scheduledTimeout);
+        scheduledTimeout = null;
+      }
+      const drankAt = new Date(drankAtIso);
+      const target = new Date(drankAt.getTime() + 60 * 60 * 1000);
+      const now = new Date();
+      const ms = target - now;
+      if (ms <= 0) {
+        // already past, run immediately
+        console.log('Scheduled drink time already passed, running checkAndNotify now');
+        checkAndNotify();
+        return;
+      }
+      console.log('Scheduling next notification at', target.toISOString());
+      scheduledTimeout = setTimeout(() => {
+        checkAndNotify();
+        scheduledTimeout = null;
+      }, ms);
+    } catch (e) {
+      console.error('Failed to schedule for drankAt:', e && e.message ? e.message : e);
+    }
+  };
+
   // Setup Postgres LISTEN to react immediately
   try {
     const pgClient = new Client({ connectionString: process.env.PG_CONN || PG_CONN });
@@ -155,6 +183,24 @@ async function start() {
         // If the NOTIFY contained a payload, try to parse it and act immediately
         try {
           const payload = msg.payload && msg.payload.length ? JSON.parse(msg.payload) : null;
+          // if it's a last_drink event, request backend to compute next-notify and schedule
+          if (payload && payload.type === 'last_drink') {
+            console.log('Received last_drink payload, requesting next-notify from backend');
+            try {
+              const r2 = await fetch(`${API_URL}/api/next-notify?user_id=${USER_ID}`);
+              if (r2.ok) {
+                const nd = await r2.json();
+                if (nd && nd.next) {
+                  scheduleForDrankAt(nd.next);
+                } else {
+                  console.log('Backend returned no next notify (reason):', nd && nd.reason);
+                }
+              }
+            } catch (e) {
+              console.error('Failed to fetch next-notify:', e && e.message ? e.message : e);
+            }
+            return;
+          }
           // dedupe quick repeated payloads
           const payloadKey = payload && payload.title && payload.message ? `${payload.title}::${payload.message}` : (msg.payload || 'new');
           const now = Date.now();
@@ -201,6 +247,21 @@ async function start() {
     });
     await pgClient.query('LISTEN notifications');
     console.log('Listening to Postgres notifications on channel "notifications"');
+    // On startup, ask backend for the computed next-notify and schedule if present
+    try {
+      const r = await fetch(`${API_URL}/api/next-notify?user_id=${USER_ID}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d && d.next) {
+          console.log('Next notify computed on startup:', d.next);
+          scheduleForDrankAt(d.next);
+        } else {
+          console.log('No next notify scheduled (reason):', d && d.reason);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch next-notify on startup:', e && e.message ? e.message : e);
+    }
   } catch (e) {
     console.error('Failed to setup Postgres LISTEN:', e.message || e);
   }

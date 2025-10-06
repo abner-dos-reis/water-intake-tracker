@@ -29,6 +29,12 @@ pool.query(`CREATE TABLE IF NOT EXISTS water_intake (
   amount INTEGER NOT NULL
 )`);
 
+pool.query(`CREATE TABLE IF NOT EXISTS last_drinks (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(255),
+  drank_at TIMESTAMP DEFAULT now()
+)`);
+
 pool.query(`CREATE TABLE IF NOT EXISTS last_access (
   id SERIAL PRIMARY KEY,
   user_id VARCHAR(255) UNIQUE,
@@ -83,7 +89,72 @@ app.post('/api/intake', async (req, res) => {
       'INSERT INTO water_intake (user_id, date, amount) VALUES ($1, $2, $3)',
       [user_id || 'default', date, amount]
     );
+    // record last drink timestamp for scheduling
+    try {
+      await pool.query('INSERT INTO last_drinks (user_id) VALUES ($1)', [user_id || 'default']);
+      // emit a NOTIFY so host-notifier can reschedule precisely
+      const payload = JSON.stringify({ type: 'last_drink', user_id: user_id || 'default', drank_at: new Date().toISOString() });
+      await pool.query('SELECT pg_notify($1, $2)', ['notifications', payload]);
+    } catch (e) {
+      console.error('Failed to record last_drink or notify:', e && e.message ? e.message : e);
+    }
     res.status(201).json({ message: 'Intake registered' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Return last drink timestamp for a user
+app.get('/api/last-drink', async (req, res) => {
+  const { user_id } = req.query;
+  try {
+    const result = await pool.query(
+      'SELECT drank_at FROM last_drinks WHERE user_id = $1 ORDER BY drank_at DESC LIMIT 1',
+      [user_id || 'default']
+    );
+    res.json({ last_drink_at: result.rows.length > 0 ? result.rows[0].drank_at : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Compute next notification timestamp for a user
+app.get('/api/next-notify', async (req, res) => {
+  const { user_id } = req.query;
+  const uid = user_id || 'default';
+  try {
+    // check if user already reached target for today
+    const today = new Date().toISOString().slice(0,10);
+    const intakeRes = await pool.query('SELECT SUM(amount) as total FROM water_intake WHERE user_id = $1 AND date = $2', [uid, today]);
+    const total = intakeRes.rows[0].total || 0;
+    const targetRes = await pool.query('SELECT water_target FROM user_settings WHERE user_id = $1', [uid]);
+    const target = targetRes.rows.length > 0 ? targetRes.rows[0].water_target : 2000;
+    if (total >= target) return res.json({ next: null, reason: 'target_reached' });
+
+    // get last drink and last ack
+    const lastDrinkRes = await pool.query('SELECT drank_at FROM last_drinks WHERE user_id = $1 ORDER BY drank_at DESC LIMIT 1', [uid]);
+    const lastAckRes = await pool.query('SELECT played_at FROM notification_acks WHERE user_id = $1 ORDER BY played_at DESC LIMIT 1', [uid]);
+    const lastDrink = lastDrinkRes.rows.length > 0 ? lastDrinkRes.rows[0].drank_at : null;
+    const lastAck = lastAckRes.rows.length > 0 ? lastAckRes.rows[0].played_at : null;
+
+    const now = new Date();
+    let next = null;
+
+    if (lastDrink && (!lastAck || new Date(lastDrink) > new Date(lastAck))) {
+      next = new Date(new Date(lastDrink).getTime() + 60 * 60 * 1000);
+    } else if (lastAck) {
+      next = new Date(new Date(lastAck).getTime() + 60 * 60 * 1000);
+    } else {
+      // no previous notifications/acks; schedule 60 minutes from now, except midnight rule
+      next = new Date(now.getTime() + 60 * 60 * 1000);
+    }
+
+    // If the next falls into the midnight hour (00:00-00:59), move to 01:00
+    if (next.getHours() === 0) {
+      next.setHours(1, 0, 0, 0);
+    }
+
+    return res.json({ next: next.toISOString(), reason: 'scheduled' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
