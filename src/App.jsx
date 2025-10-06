@@ -133,6 +133,209 @@ function App() {
 
   // Reference to control if it's a user change or initial load
   const isUserChange = React.useRef(false);
+  const lastNotifRef = React.useRef(0);
+  // Prevent local audio from playing multiple times in a short window
+  const lastLocalPlayRef = React.useRef(0);
+  const LOCAL_PLAY_DEDUPE_MS = 8000;
+  // Guard to ensure the recurring scheduler starts only once per mounted app
+  const schedulerStartedRef = React.useRef(false);
+  // Refs to control scheduler timeout/interval so other handlers can reset them
+  const schedulerTimeoutRef = React.useRef(null);
+  const schedulerIntervalRef = React.useRef(null);
+
+  // Notification sound
+  const playNotificationSound = () => {
+    // Prevent rapid duplicate local plays
+    try {
+      const now = Date.now();
+      if (now - lastLocalPlayRef.current < LOCAL_PLAY_DEDUPE_MS) {
+        console.log('Skipping local sound: recently played');
+        return;
+      }
+      lastLocalPlayRef.current = now;
+    } catch (e) {
+      // ignore
+    }
+    // Try to play external mp3 first, fallback to WebAudio beep
+    try {
+      // use sound.mp3 placed in public/
+      const audio = new window.Audio('/sound.mp3');
+      const playPromise = audio.play();
+      if (playPromise && playPromise.catch) {
+        playPromise.catch(() => {
+          // fallback to beep
+          tryBeep();
+        });
+      }
+    } catch (e) {
+      tryBeep();
+    }
+  };
+
+  const tryBeep = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(880, ctx.currentTime);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start();
+      setTimeout(() => {
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.05);
+        o.stop(ctx.currentTime + 0.06);
+      }, 200);
+    } catch (e) {
+      console.debug('Beep fallback failed', e);
+    }
+  };
+
+  // Queue a system notification on the backend (host-notifier will display it with sound)
+  const toTitleCase = (s) => s.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+
+  // Queue a system notification on the backend (host-notifier will display it with sound)
+  const queueSystemNotification = async (title = 'Time to drink water', message = 'Recommendation: 300ml') => {
+    // Prevent rapid repeated sends from UI or other sources
+    const nowTs = Date.now();
+    if (nowTs - lastNotifRef.current < 10000) {
+      console.log('Skipping send: recently sent notification', { sinceMs: nowTs - lastNotifRef.current });
+      showInlineToast('Notification already sent recently');
+      return;
+    }
+    lastNotifRef.current = nowTs;
+    try {
+      const tTitle = toTitleCase(title);
+      // Try to send a non-persistent real-time notification first (host-notifier will handle immediately).
+      // If host/backend doesn't support it, backend will fall back to persist by default.
+      try {
+        console.log('queueSystemNotification: sending to', `${API_URL}/api/notifications`);
+        const res = await fetch(`${API_URL}/api/notifications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: 'default', title: tTitle, message, persist: false }),
+          cache: 'no-store'
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        // keep the friendly original toast message
+        showInlineToast(`${tTitle} — ${message}`);
+      } catch (err) {
+        console.error('queueSystemNotification fetch error, attempting sendBeacon fallback:', err);
+        // Try sendBeacon as a last-resort fallback (fire-and-forget). Some browsers
+        // may restrict fetch in certain contexts; beacon can sometimes succeed.
+        try {
+          if (navigator && navigator.sendBeacon) {
+            const payload = JSON.stringify({ user_id: 'default', title: tTitle, message, persist: false });
+            const blob = new Blob([payload], { type: 'application/json' });
+            const ok = navigator.sendBeacon(`${API_URL}/api/notifications`, blob);
+            console.log('sendBeacon fallback used, result:', ok);
+            showInlineToast(`${tTitle} — ${message}`);
+          } else {
+            showInlineToast(`Failed to send notification: ${err.message || err}`);
+          }
+        } catch (e2) {
+          console.error('sendBeacon fallback failed:', e2);
+          showInlineToast(`Failed to send notification: ${err.message || err}`);
+        }
+      }
+      // Wait for host-notifier to either consume the queued notification or ack playback.
+      // Poll for up to 8 seconds (1s interval). If host consumed the pending notification
+      // or returned an ack newer than the queue time, don't play local fallback sound.
+      const queuedAt = new Date();
+      const maxWaitMs = 8000;
+      const intervalMs = 1000;
+      const start = Date.now();
+      let handledByHost = false;
+      while (Date.now() - start < maxWaitMs) {
+        try {
+          // Check last ack
+          const res = await fetch(`${API_URL}/api/notifications/last-ack?user_id=default`);
+          if (res.ok) {
+            const data = await res.json();
+            const last = data.last_played ? new Date(data.last_played) : null;
+            if (last && last >= queuedAt) {
+              handledByHost = true;
+              break;
+            }
+          }
+        } catch (e) {
+          // ignore and continue polling
+        }
+
+        try {
+          // If pending list is empty, host picked it up (so it will play sound)
+          const p = await fetch(`${API_URL}/api/notifications/pending`);
+          if (p.ok) {
+            const pd = await p.json();
+            const list = pd.notifications || [];
+              if (list.length === 0) {
+                console.log('Pending list empty: assuming host consumed notification');
+                handledByHost = true;
+                break;
+              }
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        await new Promise(r => setTimeout(r, intervalMs));
+      }
+
+      if (!handledByHost) {
+        playNotificationSound();
+      }
+      else {
+        // If host consumed the pending notification but didn't ack (no playback),
+        // wait a short grace period for ack; if still no ack, play local sound.
+        try {
+          const resA = await fetch(`${API_URL}/api/notifications/last-ack?user_id=default`);
+          let last = null;
+          if (resA.ok) {
+            const da = await resA.json();
+            last = da.last_played ? new Date(da.last_played) : null;
+          }
+          console.log('Host ack check: last ack =', last);
+          if (!last || last < queuedAt) {
+            // wait briefly for host to post ack
+            await new Promise(r => setTimeout(r, 1500));
+            try {
+              const resB = await fetch(`${API_URL}/api/notifications/last-ack?user_id=default`);
+              if (resB.ok) {
+                const db = await resB.json();
+                const last2 = db.last_played ? new Date(db.last_played) : null;
+                console.log('Host ack re-check: last ack =', last2);
+                if (!last2 || last2 < queuedAt) {
+                  playNotificationSound();
+                }
+              } else {
+                playNotificationSound();
+              }
+            } catch (e) {
+              playNotificationSound();
+            }
+          }
+        } catch (e) {
+          // ignore and don't block
+        }
+      }
+    } catch (e) {
+      console.error('Failed to queue system notification:', e);
+      // fallback to inline toast only
+      showInlineToast(`${title} — ${message}`);
+    }
+  };
+
+  // Inline toast state for visual fallback/testing
+  const [toast, setToast] = React.useState({ visible: false, message: '' });
+  const [testBtnDisabled, setTestBtnDisabled] = React.useState(false);
+  const showInlineToast = (message, ms = 4000) => {
+    setToast({ visible: true, message });
+    setTimeout(() => setToast({ visible: false, message: '' }), ms);
+  };
 
   // Function to save last access date
   const saveLastAccessDate = async (date) => {
@@ -175,10 +378,11 @@ function App() {
       const lastAccess = await getLastAccessDate();
       const today = getTodayDate();
       
-      // If last access is from a previous day, reset the intake
+      // If last access is from a previous day, reset the intake locally and on the backend for TODAY
       if (lastAccess && lastAccess < today) {
         setIntake(0);
         try {
+          // reset for today to ensure today's count is zero
           await fetch(`${API_URL}/api/intake/reset`, {
             method: 'DELETE',
             headers: {
@@ -186,15 +390,17 @@ function App() {
             },
             body: JSON.stringify({
               user_id: 'default',
-              date: lastAccess
+              date: today
             })
           });
         } catch (error) {
           console.error('Error resetting intake:', error);
         }
+        // update local marker
+        localStorage.setItem('last_active_day', today);
       }
-      
-      // Save current access date
+
+      // Save current access date (backend) regardless
       await saveLastAccessDate(today);
       
       await loadWaterTarget();
@@ -203,6 +409,58 @@ function App() {
     };
     loadInitialData();
   }, []);
+
+  // Recurring notification scheduler
+  React.useEffect(() => {
+    let intervalId = null;
+    let timeoutId = null;
+    // Only start the scheduler once per mounted App instance
+    if (schedulerStartedRef.current) return;
+    schedulerStartedRef.current = true;
+
+    const scheduleHourlyNotifications = () => {
+      // Schedule to run every 60 minutes
+      intervalId = setInterval(() => {
+        if (waterTarget && intake >= waterTarget) return; // skip if goal met
+        queueSystemNotification();
+      }, 60 * 60 * 1000);
+      // store refs so other parts can clear/reset
+      schedulerIntervalRef.current = intervalId;
+      return intervalId;
+    };
+
+    // Schedule the next notification after ms milliseconds and then start the hourly interval.
+    const scheduleNextNotification = (ms) => {
+      // clear existing
+      try { if (schedulerTimeoutRef.current) clearTimeout(schedulerTimeoutRef.current); } catch (e) {}
+      try { if (schedulerIntervalRef.current) clearInterval(schedulerIntervalRef.current); } catch (e) {}
+      schedulerTimeoutRef.current = setTimeout(() => {
+        if (!(waterTarget && intake >= waterTarget)) queueSystemNotification();
+        // after firing, start the regular hourly interval
+        scheduleHourlyNotifications();
+      }, ms);
+      timeoutId = schedulerTimeoutRef.current;
+      return schedulerTimeoutRef.current;
+    };
+
+    const now = new Date();
+    // If it's the midnight hour, wait until 01:00 for first notification
+    if (now.getHours() === 0) {
+      const msToOne = ((60 - now.getMinutes()) * 60 - now.getSeconds()) * 1000;
+      // schedule first at 01:00, then hourly
+      scheduleNextNotification(msToOne);
+    } else {
+      // Start the interval such that the first notification happens after 60 minutes
+      // (we don't fire immediately on page load)
+      scheduleNextNotification(60 * 60 * 1000);
+    }
+
+    return () => {
+      try { if (schedulerTimeoutRef.current) clearTimeout(schedulerTimeoutRef.current); } catch (e) {}
+      try { if (schedulerIntervalRef.current) clearInterval(schedulerIntervalRef.current); } catch (e) {}
+      schedulerStartedRef.current = false;
+    };
+  }, [intake, waterTarget]);
 
   // Save target to backend only when user changes it (not on initial load)
   useEffect(() => {
@@ -272,6 +530,23 @@ function App() {
     await loadTodayIntake();
     
     setShowCustom(false);
+    // Reset the notification countdown: schedule next notification 60 minutes from now
+    try {
+      const ms = 60 * 60 * 1000;
+      if (typeof schedulerTimeoutRef !== 'undefined' && schedulerTimeoutRef && schedulerTimeoutRef.current) {
+        clearTimeout(schedulerTimeoutRef.current);
+      }
+      // Schedule next after 60 minutes; it will start the regular hourly interval after firing
+      const t = setTimeout(() => {
+        if (!(waterTarget && intake >= waterTarget)) queueSystemNotification();
+        // start hourly interval after this
+        try { if (schedulerIntervalRef.current) clearInterval(schedulerIntervalRef.current); } catch (e) {}
+        schedulerIntervalRef.current = setInterval(() => { if (!(waterTarget && intake >= waterTarget)) queueSystemNotification(); }, 60 * 60 * 1000);
+      }, ms);
+      schedulerTimeoutRef.current = t;
+    } catch (e) {
+      console.error('Failed to reset scheduler after drinking:', e);
+    }
   };
 
 
@@ -283,6 +558,12 @@ function App() {
       <header className="header">
         <h1>Water Intake Tracker</h1>
       </header>
+      {/* Inline toast fallback */}
+      {toast.visible && (
+        <div style={{ position: 'fixed', top: 20, right: 20, background: '#222', color: '#fff', padding: '0.8rem 1rem', borderRadius: '0.6rem', zIndex: 3000, boxShadow: '0 6px 20px rgba(0,0,0,0.4)' }}>
+          {toast.message}
+        </div>
+      )}
       <main>
         <h2>Today</h2>
         {isLoading ? (
@@ -354,6 +635,27 @@ function App() {
             <div className="custom-popup-inner" onClick={e => e.stopPropagation()}>
               <div className="custom-popup-title">Choose Amount</div>
               {CUSTOM_OPTIONS.map(opt => (
+                <button key={opt.value} className="custom-option" onClick={() => { handleAdd(opt.value); setShowCustom(false); }}>
+                  <span>{opt.icon}</span> {opt.label}
+                </button>
+              ))}
+              <button className="close-popup" onClick={() => setShowCustom(false)}>Close</button>
+            </div>
+          </div>
+        )}
+        {showCongrats && (
+          <>
+            {/* Confetti */}
+            {[...Array(20)].map((_, i) => (
+              <div 
+                key={i} 
+                className="confetti" 
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 3}s`,
+                  animationDuration: `${2 + Math.random() * 2}s`
+                }}
+              />
             ))}
             <div className="congrats-bar">
               <div className="congrats-content">
@@ -365,6 +667,7 @@ function App() {
             </div>
           </>
         )}
+        {/* Test button removed in production — host notifications and scheduler remain */}
         </>
         )}
       </main>

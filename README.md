@@ -29,6 +29,7 @@ A modern and elegant web application to track your daily water intake with real-
 - **⏰ Automatic Reset**: Daily progress resets automatically at midnight
 - **💾 Persistent Storage**: All data is saved to PostgreSQL database with localStorage fallback
 - **📱 Responsive Design**: Modern dark theme interface that works on all devices
+ - **🔔 Reliable Notifications**: Desktop and system notifications with host-level playback (works even when browser is closed)
 
 ## 🚀 Quick Start
 
@@ -117,6 +118,71 @@ The application follows a modern three-tier architecture:
 - Vite for fast development and building
 - CSS3 animations and responsive design
 - Progressive enhancement with localStorage fallback
+
+## 🔔 Notification System (Host + Browser)
+
+This project includes a robust notification system to remind you to drink water. It uses a small host-side notifier to show native OS notifications and play an audio file even when the browser is closed.
+
+How it works
+- Frontend: schedules hourly reminders (every 60 minutes) while the web app is open. When it needs to notify, it attempts a real-time signal to the backend (`persist:false`). If the host notifier is available it will play the system sound; otherwise the frontend will play a fallback sound.
+- Backend: accepts notification requests and can either emit a Postgres NOTIFY with a JSON payload (real-time, `persist:false`) or persist a durable pending notification row (for hosts currently offline). It exposes endpoints for queueing, consuming, and acknowledging notifications.
+- Host-notifier: a small Node script (`tools/host-notifier/notifier.js`) that LISTENs to Postgres `notifications` and also polls the backend periodically as a backup. It plays the configured `SOUND_PATH` via `mpg123` and POSTs an ack so the frontend won't play a duplicate sound.
+
+Key endpoints
+- `POST /api/notifications` — send a notification. Use `persist:false` in the JSON body to signal real-time delivery to host-notifier (no row persisted). Example payload: `{"user_id":"default","title":"Time To Drink Water","message":"Recommendation: 300ml","persist":false}`.
+- `GET /api/notifications/pending` — host-notifier fetches and consumes pending notifications.
+- `POST /api/notifications/ack` — host-notifier posts here after playing sound (used by frontend to avoid fallback playback).
+- `GET /api/notifications/last-ack` — frontend polls this to check if host played the notification.
+
+Host notifier (systemd user service)
+1. Install `mpg123` on your host (used to play audio):
+
+```sh
+sudo apt install mpg123
+```
+
+2. Create a systemd user unit at `~/.config/systemd/user/water-notifier.service` with contents similar to:
+
+```ini
+[Unit]
+Description=Water Intake Host Notifier
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/water-notifier/env
+ExecStart=/usr/bin/node /home/<your-user>/Docker/WaterIntakeTracking/tools/host-notifier/notifier.js
+WorkingDirectory=/home/<your-user>/Docker/WaterIntakeTracking/tools/host-notifier
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+3. Create an environment file `~/.config/water-notifier/env`:
+
+```ini
+API_URL="http://localhost:4000"
+PG_CONN="postgresql://postgres:postgres@127.0.0.1:5432/waterdb"
+SOUND_PATH="/home/<your-user>/Docker/WaterIntakeTracking/public/sound.mp3"
+POLL_MINUTES=60
+USER_ID=default
+```
+
+4. Enable and start the service:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now water-notifier.service
+journalctl --user -u water-notifier.service -f
+```
+
+Notes
+- The host-notifier plays sound first then shows the desktop notification to align audio with the UI. The notifier includes small dedupe protections to avoid duplicate plays.
+- If the backend or DB are not yet available at startup, the notifier will retry; consider using systemd unit ordering or a small wrapper to wait for the backend to be healthy before starting the notifier.
+
+If you'd like, I can add an optional admin endpoint to clear old pending notifications or extend the notifier with an explicit healthcheck/wait wrapper.
 
 ### Backend (Node.js + Express)
 - RESTful API with Express.js
