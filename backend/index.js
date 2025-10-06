@@ -25,6 +25,12 @@ pool.query(`CREATE TABLE IF NOT EXISTS water_intake (
   amount INTEGER NOT NULL
 )`);
 
+pool.query(`CREATE TABLE IF NOT EXISTS last_access (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(255) UNIQUE,
+  last_date DATE NOT NULL
+)`);
+
 pool.query(`CREATE TABLE IF NOT EXISTS user_settings (
   id SERIAL PRIMARY KEY,
   user_id VARCHAR(255) UNIQUE,
@@ -159,6 +165,37 @@ app.get('/api/celebration/check', async (req, res) => {
       [user_id || 'default', date]
     );
     res.json({ celebrated: result.rows.length > 0 && result.rows[0].celebrated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get last access date
+app.get('/api/last-access', async (req, res) => {
+  const { user_id } = req.query;
+  try {
+    const result = await pool.query(
+      'SELECT last_date FROM last_access WHERE user_id = $1',
+      [user_id || 'default']
+    );
+    res.json({ last_date: result.rows.length > 0 ? result.rows[0].last_date : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update last access date
+app.post('/api/last-access', async (req, res) => {
+  const { user_id, date } = req.body;
+  if (!date) return res.status(400).json({ error: 'Missing date' });
+  try {
+    await pool.query(`
+      INSERT INTO last_access (user_id, last_date) 
+      VALUES ($1, $2) 
+      ON CONFLICT (user_id) 
+      DO UPDATE SET last_date = $2
+    `, [user_id || 'default', date]);
+    res.json({ message: 'Last access date updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

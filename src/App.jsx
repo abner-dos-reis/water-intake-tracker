@@ -134,10 +134,69 @@ function App() {
   // Reference to control if it's a user change or initial load
   const isUserChange = React.useRef(false);
 
+  // Function to save last access date
+  const saveLastAccessDate = async (date) => {
+    try {
+      await fetch(`${API_URL}/api/last-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: 'default',
+          date: date
+        })
+      });
+    } catch (error) {
+      console.error('Error saving last access date:', error);
+    }
+  };
+
+  // Function to get last access date
+  const getLastAccessDate = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/last-access?user_id=default`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.last_date;
+      }
+    } catch (error) {
+      console.error('Error getting last access date:', error);
+    }
+    return null;
+  };
+
   // Load initial data synchronously
   useEffect(() => {
     const loadInitialData = async () => {
       setUserHidCelebration(false); // Reset - user can see celebration again
+      
+      // Check last access date
+      const lastAccess = await getLastAccessDate();
+      const today = getTodayDate();
+      
+      // If last access is from a previous day, reset the intake
+      if (lastAccess && lastAccess < today) {
+        setIntake(0);
+        try {
+          await fetch(`${API_URL}/api/intake/reset`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              user_id: 'default',
+              date: lastAccess
+            })
+          });
+        } catch (error) {
+          console.error('Error resetting intake:', error);
+        }
+      }
+      
+      // Save current access date
+      await saveLastAccessDate(today);
+      
       await loadWaterTarget();
       await loadTodayIntake();
       setIsLoading(false);
