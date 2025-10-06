@@ -224,12 +224,33 @@ function App() {
 
   // Check date change every minute and reset at 00:00
   useEffect(() => {
-    const checkDateChange = () => {
+    const checkDateChange = async () => {
       const today = getTodayDate();
       if (today !== currentDate) {
         setCurrentDate(today);
         setIntake(0);
         setShowCongrats(false);
+
+        // Reset intake if the app was offline during midnight
+        const lastAccess = await getLastAccessDate();
+        if (lastAccess && lastAccess < today) {
+          try {
+            await fetch(`${API_URL}/api/intake/reset`, {
+              method: 'DELETE',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                user_id: 'default',
+                date: lastAccess
+              })
+            });
+          } catch (error) {
+            console.error('Error resetting intake:', error);
+          }
+        }
+
+        await saveLastAccessDate(today);
         loadTodayIntake();
       }
     };
@@ -333,27 +354,6 @@ function App() {
             <div className="custom-popup-inner" onClick={e => e.stopPropagation()}>
               <div className="custom-popup-title">Choose Amount</div>
               {CUSTOM_OPTIONS.map(opt => (
-                <button key={opt.value} className="custom-option" onClick={() => { handleAdd(opt.value); setShowCustom(false); }}>
-                  <span>{opt.icon}</span> {opt.label}
-                </button>
-              ))}
-              <button className="close-popup" onClick={() => setShowCustom(false)}>Close</button>
-            </div>
-          </div>
-        )}
-        {showCongrats && (
-          <>
-            {/* Confetti */}
-            {[...Array(20)].map((_, i) => (
-              <div 
-                key={i} 
-                className="confetti" 
-                style={{
-                  left: `${Math.random() * 100}%`,
-                  animationDelay: `${Math.random() * 3}s`,
-                  animationDuration: `${2 + Math.random() * 2}s`
-                }}
-              />
             ))}
             <div className="congrats-bar">
               <div className="congrats-content">
