@@ -1,6 +1,7 @@
 const notifier = require('node-notifier');
 const fetch = require('node-fetch');
 const path = require('path');
+const fs = require('fs');
 
 const API_URL = process.env.VITE_API_URL || 'http://localhost:4000';
 const POLL_MINUTES = process.env.POLL_MINUTES ? Number(process.env.POLL_MINUTES) : 60;
@@ -79,12 +80,34 @@ async function checkAndNotify() {
           }
         }
         setTimeout(() => {
-          notifier.notify({
-            title: toTitleCase(n.title),
-            message: n.message,
-            icon: path.join(__dirname, '..', '..', 'public', 'water.png'),
-            wait: false
-          });
+          // Resolve icon: try payload path, then public/<name>, then fallback
+          let iconPath = path.join(__dirname, '..', '..', 'public', 'water.png');
+          try {
+            if (n.icon) {
+              const candidate = path.join(__dirname, '..', '..', n.icon.replace(/^\//, ''));
+              const candidatePublic = path.join(__dirname, '..', '..', 'public', n.icon.replace(/^\//, ''));
+              if (fs.existsSync(candidate)) iconPath = candidate;
+              else if (fs.existsSync(candidatePublic)) iconPath = candidatePublic;
+            }
+          } catch (e) {
+            // ignore fs errors and use default
+          }
+          try {
+            notifier.notify({
+              title: toTitleCase(n.title),
+              message: n.message,
+              icon: iconPath,
+              wait: false
+            });
+          } catch (notifyErr) {
+            console.error('node-notifier failed to show notification:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+            // try without icon as last resort
+            try {
+              notifier.notify({ title: toTitleCase(n.title), message: n.message, wait: false });
+            } catch (e2) {
+              console.error('Fallback notify also failed:', e2 && e2.message ? e2.message : e2);
+            }
+          }
         }, 150);
       }
     }
@@ -232,7 +255,21 @@ async function start() {
               }
             }
             setTimeout(() => {
-              notifier.notify({ title: toTitleCase(payload.title), message: payload.message, icon: path.join(__dirname, '..', '..', 'public', 'water.png'), wait: false });
+              let iconPath = path.join(__dirname, '..', '..', 'public', 'water.png');
+              try {
+                if (payload.icon) {
+                  const candidate = path.join(__dirname, '..', '..', payload.icon.replace(/^\//, ''));
+                  const candidatePublic = path.join(__dirname, '..', '..', 'public', payload.icon.replace(/^\//, ''));
+                  if (fs.existsSync(candidate)) iconPath = candidate;
+                  else if (fs.existsSync(candidatePublic)) iconPath = candidatePublic;
+                }
+              } catch (e) {}
+              try {
+                notifier.notify({ title: toTitleCase(payload.title), message: payload.message, icon: iconPath, wait: false });
+              } catch (notifyErr) {
+                console.error('node-notifier failed to show notification:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+                try { notifier.notify({ title: toTitleCase(payload.title), message: payload.message, wait: false }); } catch (e2) { console.error('Fallback notify also failed:', e2 && e2.message ? e2.message : e2); }
+              }
             }, 150);
             // done
             return;

@@ -60,6 +60,7 @@ pool.query(`CREATE TABLE IF NOT EXISTS pending_notifications (
   user_id VARCHAR(255),
   title TEXT NOT NULL,
   message TEXT NOT NULL,
+  icon TEXT,
   created_at TIMESTAMP DEFAULT now()
 )`);
 
@@ -264,7 +265,7 @@ app.post('/api/notifications', async (req, res) => {
     // If client explicitly requests non-persistent (real-time) notification, just send NOTIFY
     // with a JSON payload so host-notifier can act immediately without storing rows.
     if (req.body && req.body.persist === false) {
-      const payload = JSON.stringify({ user_id: user_id || 'default', title, message });
+  const payload = JSON.stringify({ user_id: user_id || 'default', title, message, icon: req.body.icon || null });
       try {
         // Use pg_notify via SELECT so we can pass the payload as a parameter safely
         await pool.query('SELECT pg_notify($1, $2)', ['notifications', payload]);
@@ -276,12 +277,12 @@ app.post('/api/notifications', async (req, res) => {
 
     // Default: upsert into pending_notifications so it's durable if host is down
     await pool.query(
-      `INSERT INTO pending_notifications (user_id, title, message)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id, title, message)
-       DO UPDATE SET created_at = now(), message = EXCLUDED.message`,
-      [user_id || 'default', title, message]
-    );
+  `INSERT INTO pending_notifications (user_id, title, message, icon)
+   VALUES ($1, $2, $3, $4)
+   ON CONFLICT (user_id, title, message)
+   DO UPDATE SET created_at = now(), message = EXCLUDED.message, icon = EXCLUDED.icon`,
+  [user_id || 'default', title, message, req.body.icon || null]
+);
 
     // notify listeners via Postgres NOTIFY (without payload)
     try {

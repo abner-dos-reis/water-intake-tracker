@@ -25,6 +25,7 @@ function App() {
   const [isTargetLoaded, setIsTargetLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userHidCelebration, setUserHidCelebration] = useState(false);
+  const instanceIdRef = React.useRef(`inst_${Math.random().toString(36).slice(2,9)}`);
 
 
   // Function to get current date in YYYY-MM-DD format
@@ -214,10 +215,12 @@ function App() {
       // If host/backend doesn't support it, backend will fall back to persist by default.
       try {
         console.log('queueSystemNotification: sending to', `${API_URL}/api/notifications`);
+        // include icon so host-notifier can show it; backend will ignore if not supported
+        const payload = { user_id: 'default', title: tTitle, message, persist: false, icon: '/water.png' };
         const res = await fetch(`${API_URL}/api/notifications`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: 'default', title: tTitle, message, persist: false }),
+          body: JSON.stringify(payload),
           cache: 'no-store'
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -410,6 +413,69 @@ function App() {
     loadInitialData();
   }, []);
 
+  // Minimal inter-instance sync: BroadcastChannel with localStorage fallback
+  useEffect(() => {
+    const key = 'water-sync-v1';
+    let bc = null;
+    try { if ('BroadcastChannel' in window) bc = new BroadcastChannel(key); } catch (e) { bc = null; }
+
+    const onMessage = (msg) => {
+      try {
+        const data = msg && msg.data ? msg.data : (typeof msg === 'string' ? JSON.parse(msg) : msg);
+        if (!data || data.inst === instanceIdRef.current) return;
+        // If remote indicates a newer change, reload authoritative values from server
+        if (data.ts && data.ts > (window.__water_last_ts__ || 0)) {
+          window.__water_last_ts__ = data.ts;
+          // reload authoritative intake and target
+          loadTodayIntake();
+          loadWaterTarget();
+        }
+      } catch (e) {}
+    };
+
+    if (bc) bc.addEventListener('message', onMessage);
+    const onStorage = (ev) => { try { if (ev.key !== key) return; const data = JSON.parse(ev.newValue || '{}'); onMessage(data); } catch (e) {} };
+    window.addEventListener('storage', onStorage);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        loadTodayIntake();
+        loadWaterTarget();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => { try { if (bc) bc.removeEventListener('message', onMessage); bc && bc.close(); } catch (e) {}; window.removeEventListener('storage', onStorage); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
+
+  // publish state to other instances when intake or waterTarget changes
+  useEffect(() => {
+    try {
+      const key = 'water-sync-v1';
+      const payload = { inst: instanceIdRef.current, ts: Date.now(), intake, waterTarget };
+      try { if ('BroadcastChannel' in window) { const bc = new BroadcastChannel(key); bc.postMessage(payload); bc.close(); } } catch (e) {}
+      try { localStorage.setItem(key, JSON.stringify(payload)); } catch (e) {}
+    } catch (e) {}
+  }, [intake, waterTarget]);
+
+  // Poll backend for last_drink every 10s to keep instances in sync with DB (authoritative)
+  useEffect(() => {
+    let interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/last-drink?user_id=default`);
+        if (res.ok) {
+          const data = await res.json();
+          const last = data.last_drink_at ? new Date(data.last_drink_at).getTime() : 0;
+          if (last > (window.__last_drank_ts__ || 0)) {
+            window.__last_drank_ts__ = last;
+            await loadTodayIntake();
+          }
+        }
+      } catch (e) {}
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Recurring notification scheduler
   React.useEffect(() => {
     let intervalId = null;
@@ -528,6 +594,14 @@ function App() {
     
     // Then reload the correct value from backend
     await loadTodayIntake();
+
+    // Publish an explicit sync signal so other open instances reload authoritative state
+    try {
+      const key = 'water-sync-state-v1';
+      const payload = { inst: instanceIdRef.current, ts: Date.now(), reload: true };
+      try { if ('BroadcastChannel' in window) { const bc = new BroadcastChannel(key); bc.postMessage(payload); bc.close(); } } catch (e) {}
+      try { localStorage.setItem(key, JSON.stringify(payload)); } catch (e) {}
+    } catch (e) {}
     
     setShowCustom(false);
     // Reset the notification countdown: schedule next notification 60 minutes from now
@@ -629,6 +703,20 @@ function App() {
           <button className="portion-btn special" onClick={() => setShowCustom(v => !v)}>
             <span role="img" aria-label="other">💧</span> SOMETHING ELSE
           </button>
+        </div>
+        <div style={{ marginTop: 12, textAlign: 'center' }}>
+          <button className="test-notif-btn" onClick={async () => {
+            try {
+              await fetch(`${API_URL}/api/notifications`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: 'default', title: 'Test Notification', message: 'This is a test triggered manually', persist: true, icon: '/water.png' })
+              });
+              showInlineToast('Test notification queued (persistent)');
+            } catch (e) {
+              showInlineToast('Failed to queue test notification');
+            }
+          }}>Send Test Notification</button>
         </div>
         {showCustom && (
           <div className="custom-popup" onClick={() => setShowCustom(false)}>
