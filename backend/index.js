@@ -303,7 +303,7 @@ app.get('/api/notifications/pending', async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const result = await client.query('SELECT id, user_id, title, message, created_at FROM pending_notifications WHERE created_at >= $1 ORDER BY created_at', [serverStart]);
+  const result = await client.query('SELECT id, user_id, title, message, icon, created_at FROM pending_notifications WHERE created_at >= $1 ORDER BY created_at', [serverStart]);
       if (result.rows.length > 0) {
         const ids = result.rows.map(r => r.id);
         await client.query('DELETE FROM pending_notifications WHERE id = ANY($1::int[])', [ids]);

@@ -93,6 +93,7 @@ async function checkAndNotify() {
             // ignore fs errors and use default
           }
           try {
+            console.log('Notifier: showing pending notification with iconPath =', iconPath);
             notifier.notify({
               title: toTitleCase(n.title),
               message: n.message,
@@ -100,9 +101,10 @@ async function checkAndNotify() {
               wait: false
             });
           } catch (notifyErr) {
-            console.error('node-notifier failed to show notification:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+            console.error('node-notifier failed to show notification with icon:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
             // try without icon as last resort
             try {
+              console.log('Notifier: falling back to notify without icon for title=', n.title);
               notifier.notify({ title: toTitleCase(n.title), message: n.message, wait: false });
             } catch (e2) {
               console.error('Fallback notify also failed:', e2 && e2.message ? e2.message : e2);
@@ -265,10 +267,11 @@ async function start() {
                 }
               } catch (e) {}
               try {
+                console.log('Notifier: showing payload notification with iconPath =', iconPath);
                 notifier.notify({ title: toTitleCase(payload.title), message: payload.message, icon: iconPath, wait: false });
               } catch (notifyErr) {
-                console.error('node-notifier failed to show notification:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
-                try { notifier.notify({ title: toTitleCase(payload.title), message: payload.message, wait: false }); } catch (e2) { console.error('Fallback notify also failed:', e2 && e2.message ? e2.message : e2); }
+                console.error('node-notifier failed to show notification with icon:', notifyErr && notifyErr.message ? notifyErr.message : notifyErr);
+                try { console.log('Notifier: falling back to notify without icon for payload title=', payload.title); notifier.notify({ title: toTitleCase(payload.title), message: payload.message, wait: false }); } catch (e2) { console.error('Fallback notify also failed:', e2 && e2.message ? e2.message : e2); }
               }
             }, 150);
             // done

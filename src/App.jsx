@@ -704,20 +704,7 @@ function App() {
             <span role="img" aria-label="other">💧</span> SOMETHING ELSE
           </button>
         </div>
-        <div style={{ marginTop: 12, textAlign: 'center' }}>
-          <button className="test-notif-btn" onClick={async () => {
-            try {
-              await fetch(`${API_URL}/api/notifications`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: 'default', title: 'Test Notification', message: 'This is a test triggered manually', persist: true, icon: '/water.png' })
-              });
-              showInlineToast('Test notification queued (persistent)');
-            } catch (e) {
-              showInlineToast('Failed to queue test notification');
-            }
-          }}>Send Test Notification</button>
-        </div>
+        {/* Test notification button removed per user request */}
         {showCustom && (
           <div className="custom-popup" onClick={() => setShowCustom(false)}>
             <div className="custom-popup-inner" onClick={e => e.stopPropagation()}>
