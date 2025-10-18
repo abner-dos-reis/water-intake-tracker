@@ -17,6 +17,51 @@ const pool = new Pool({
   port: 5432,
 });
 
+// Simple SSE stream to push Postgres NOTIFY payloads to connected browsers
+app.get('/api/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  // acquire a client to LISTEN for notifications
+  const client = await pool.connect();
+  let closed = false;
+
+  const onPgNotify = (msg) => {
+    try {
+      const payload = msg.payload || '';
+      // send as a simple SSE event
+      res.write(`data: ${payload}\n\n`);
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  try {
+    await client.query('LISTEN notifications');
+    client.on('notification', onPgNotify);
+  } catch (e) {
+    console.error('Failed to setup LISTEN for SSE stream:', e && e.message ? e.message : e);
+    res.end();
+    client.release();
+    return;
+  }
+
+  // keep connection alive with a comment ping
+  const keepAlive = setInterval(() => {
+    try { res.write(': ping\n\n'); } catch (e) {}
+  }, 15000);
+
+  req.on('close', async () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepAlive);
+    try { client.removeListener('notification', onPgNotify); } catch (e) {}
+    try { await client.query('UNLISTEN notifications'); } catch (e) {}
+    client.release();
+  });
+});
+
 // Record backend start time so we don't deliver pending notifications that were
 // created before this process started (prevents mass-fire on docker restart).
 const serverStart = new Date();

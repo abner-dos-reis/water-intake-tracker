@@ -423,10 +423,15 @@ function App() {
       try {
         const data = msg && msg.data ? msg.data : (typeof msg === 'string' ? JSON.parse(msg) : msg);
         if (!data || data.inst === instanceIdRef.current) return;
-        // If remote indicates a newer change, reload authoritative values from server
+        // If remote indicates a newer change, apply immediately and then reload authoritative values from server
         if (data.ts && data.ts > (window.__water_last_ts__ || 0)) {
           window.__water_last_ts__ = data.ts;
-          // reload authoritative intake and target
+          // Apply immediate UI updates when payload contains authoritative values
+          try {
+            if (typeof data.intake === 'number') setIntake(data.intake);
+            if (typeof data.waterTarget === 'number') setWaterTarget(data.waterTarget);
+          } catch (e) {}
+          // Still reload authoritative intake and target in background to reconcile any drift
           loadTodayIntake();
           loadWaterTarget();
         }
@@ -446,6 +451,33 @@ function App() {
     document.addEventListener('visibilitychange', onVisibility);
 
     return () => { try { if (bc) bc.removeEventListener('message', onMessage); bc && bc.close(); } catch (e) {}; window.removeEventListener('storage', onStorage); document.removeEventListener('visibilitychange', onVisibility); };
+  }, []);
+
+  // Connect to backend SSE stream to receive DB-level notifications in real-time
+  useEffect(() => {
+    let es = null;
+    try {
+      es = new EventSource(`${API_URL}/api/stream`);
+      es.onmessage = (ev) => {
+        try {
+          if (!ev.data) return;
+          const payload = JSON.parse(ev.data);
+          // If payload contains intake or target, apply immediately
+          if (payload && typeof payload === 'object') {
+            if (typeof payload.intake === 'number') setIntake(payload.intake);
+            if (typeof payload.waterTarget === 'number') setWaterTarget(payload.waterTarget);
+            // Also trigger a background authoritative reload
+            loadTodayIntake();
+            loadWaterTarget();
+          }
+        } catch (e) {}
+      };
+      es.onerror = () => {
+        try { es.close(); } catch (e) {}
+      };
+    } catch (e) {}
+
+    return () => { try { if (es) es.close(); } catch (e) {} };
   }, []);
 
   // publish state to other instances when intake or waterTarget changes
@@ -595,10 +627,10 @@ function App() {
     // Then reload the correct value from backend
     await loadTodayIntake();
 
-    // Publish an explicit sync signal so other open instances reload authoritative state
+    // Publish an explicit authoritative payload so other open instances update immediately
     try {
-      const key = 'water-sync-state-v1';
-      const payload = { inst: instanceIdRef.current, ts: Date.now(), reload: true };
+      const key = 'water-sync-v1';
+      const payload = { inst: instanceIdRef.current, ts: Date.now(), intake, waterTarget };
       try { if ('BroadcastChannel' in window) { const bc = new BroadcastChannel(key); bc.postMessage(payload); bc.close(); } } catch (e) {}
       try { localStorage.setItem(key, JSON.stringify(payload)); } catch (e) {}
     } catch (e) {}
