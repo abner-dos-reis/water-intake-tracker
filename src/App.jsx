@@ -14,6 +14,9 @@ const CUSTOM_OPTIONS = [
 ];
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// When true, the frontend will send notifications to the backend (and trigger local fallbacks).
+// Set to false to rely ONLY on the host notifier (systemd service) for desktop notifications.
+const ENABLE_FRONTEND_NOTIFICATIONS = false;
 
 function App() {
   const [intake, setIntake] = useState(0);
@@ -201,6 +204,10 @@ function App() {
 
   // Queue a system notification on the backend (host-notifier will display it with sound)
   const queueSystemNotification = async (title = 'Time to drink water', message = 'Recommendation: 300ml') => {
+    if (!ENABLE_FRONTEND_NOTIFICATIONS) {
+      console.log('Frontend notifications disabled by flag; skipping queueSystemNotification');
+      return;
+    }
     // Prevent rapid repeated sends from UI or other sources
     const nowTs = Date.now();
     if (nowTs - lastNotifRef.current < 10000) {
