@@ -1,5 +1,10 @@
 # 💧 Water Intake Tracker
 
+**Built with**: AI for syntax | Human for logic | Learning clean, scalable code  
+All repos public to show my evolution as a developer 📈
+
+---
+
 A modern and elegant web application to track your daily water intake with real-time progress visualization and persistent data storage.
 
 <p align="center">
