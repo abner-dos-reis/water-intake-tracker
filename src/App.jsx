@@ -24,15 +24,27 @@ function App() {
   const [waterTarget, setWaterTarget] = useState(null); // Starts null until loaded from backend
   const [editingTarget, setEditingTarget] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  });
   const [isTargetLoaded, setIsTargetLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userHidCelebration, setUserHidCelebration] = useState(false);
   const instanceIdRef = React.useRef(`inst_${Math.random().toString(36).slice(2,9)}`);
 
 
-  // Function to get current date in YYYY-MM-DD format
-  const getTodayDate = () => new Date().toISOString().slice(0, 10);
+  // Function to get current local date in YYYY-MM-DD format (avoids UTC rollovers)
+  const getTodayDate = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   // Function to load today's intake from backend
   const loadTodayIntake = async () => {
